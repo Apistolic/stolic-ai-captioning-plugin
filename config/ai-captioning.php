@@ -79,16 +79,27 @@ return [
     | Keys may also be 'provider/model'. Cached input tokens are counted at
     | the full input price, so the estimate does not come out too low.
     |
-    | PLACEHOLDER VALUES: verify against Google's Gemini pricing
-    | (https://ai.google.dev/gemini-api/docs/pricing) and your invoices
-    | before relying on them. A model missing here uses the fallback above.
+    | Gemini Developer API, paid Standard tier, checked 2026-11-13 against
+    | Google's pricing page (https://ai.google.dev/gemini-api/docs/pricing,
+    | which redirects to aistudio.google.com/docs/pricing). Images are billed
+    | at the input rate. Prices change: re-check the page and your invoices.
+    | A model missing here uses the fallback above.
     |
     */
 
     'pricing' => [
-        'gemini-3.5-flash' => ['input_per_million' => 0.50, 'output_per_million' => 3.00, 'per_image' => null], // PLACEHOLDER: verify against Google's Gemini pricing
-        'gemini-2.5-flash' => ['input_per_million' => 0.30, 'output_per_million' => 2.50, 'per_image' => null], // PLACEHOLDER: verify against Google's Gemini pricing
-        'gemini-2.5-flash-lite' => ['input_per_million' => 0.10, 'output_per_million' => 0.40, 'per_image' => null], // PLACEHOLDER: verify against Google's Gemini pricing
+        'gemini-3.5-flash-lite' => ['input_per_million' => 0.30, 'output_per_million' => 2.50, 'per_image' => null],
+        'gemini-3.1-flash-lite' => ['input_per_million' => 0.25, 'output_per_million' => 1.50, 'per_image' => null],
+        'gemini-3-flash-preview' => ['input_per_million' => 0.50, 'output_per_million' => 3.00, 'per_image' => null],
+        // 3.6 / 3.8 Flash: 0.75 / 3.75 until 2026-12-31, then 1.50 / 7.50; the later (higher) price is used so the estimate never comes out low.
+        'gemini-3.6-flash' => ['input_per_million' => 1.50, 'output_per_million' => 7.50, 'per_image' => null],
+        'gemini-3.8-flash' => ['input_per_million' => 1.50, 'output_per_million' => 7.50, 'per_image' => null],
+        // From 2026-12-01 Google routes gemini-2.5-flash requests to Gemini 3.5 Flash-Lite.
+        'gemini-2.5-flash' => ['input_per_million' => 0.30, 'output_per_million' => 2.50, 'per_image' => null],
+        'gemini-2.5-flash-lite' => ['input_per_million' => 0.10, 'output_per_million' => 0.40, 'per_image' => null],
+        // gemini-3.5-flash (laravel/ai's default Gemini model) was not on the pricing page on 2026-11-13; priced like
+        // the most expensive Flash model so the budget errs high. Prefer a listed model (e.g. gemini-3.5-flash-lite).
+        'gemini-3.5-flash' => ['input_per_million' => 1.50, 'output_per_million' => 7.50, 'per_image' => null],
     ],
 
     /*

@@ -34,9 +34,25 @@ php artisan migrate   # the spend ledger and pause state (the package loads its 
 
 To keep the migration in the app instead: `php artisan vendor:publish --tag=ai-captioning-migrations` (it skips tables that already exist, so the auto-loaded copy and the published one do not clash; set `database.run_migrations` to false to stop auto-loading).
 
-Until 0.2.0 is tagged, require `dev-main` (or `^0.1` without the budget and branding).
+### Getting a Gemini API key (for developers)
 
-Set the key of the provider you use in `config/ai.php` (e.g. `GEMINI_API_KEY`).
+The package calls the model through `laravel/ai`, so the key lives in the host app, never in this package.
+
+1. Sign in at [Google AI Studio](https://aistudio.google.com) with the Google account that should own the key, and choose **Get API key → Create API key**. AI Studio creates (or uses) a Google Cloud project for it.
+2. **Paid or free tier.** Without billing the key runs on the free tier, which has low rate limits, and Google's terms for the free tier allow it to use your prompts and images to improve its products. For real school images, link a **billing account** to the key's Cloud project (AI Studio → Billing) so it runs on the paid tier; check Google's current terms.
+3. **Restrict the key** in Google Cloud Console → APIs & Services → Credentials: under API restrictions allow only the **Generative Language API**. Keep one key per app and environment so you can revoke one without the others.
+4. **Set a spend alert in Google too.** Cloud Console → Billing → Budgets & alerts: a budget on the key's project, with email alerts. The package's own budget (below) stops calls from the app; Google's alert catches anything else using the key.
+5. Put the key in the host app's `.env` (never in git):
+
+   ```dotenv
+   GEMINI_API_KEY=your-key
+   GEMINI_MODEL=gemini-3.5-flash-lite   # optional; laravel/ai's default is gemini-3.5-flash
+   ```
+
+   `config/ai.php` (from `laravel/ai`) reads these for its `gemini` provider. If you choose a model, make sure it has an entry in this package's `pricing` config, or the budget uses the flat fallback price.
+6. Check it: turn captioning on in the host app, then `php artisan ai-captioning:describe … --limit=1 --apply` and look for the `ImageDescribed` event (the host's API log) and the spend in `php artisan ai-captioning:budget`.
+
+The package's tests never call Google: they fake the agent and use a dummy key from `phpunit.xml`.
 
 ## How it works
 
@@ -117,7 +133,7 @@ usd    = input / 1M x input_per_million + output / 1M x output_per_million + per
 
 When the model has no `pricing` entry, or the provider reported no usage (zero tokens, as fakes do), the flat `budget.fallback_cost_usd` is counted instead. A call that throws is counted at the fallback too, since the provider may have charged for it. The estimate never counts a call as free.
 
-> **Set the prices.** The shipped `pricing` values are placeholders. Check Google's Gemini pricing page and your invoices, then set the entries for the models you use (`gemini-3.5-flash` is laravel/ai's default Gemini model). Keys may be `model` or `provider/model`.
+> **Check the prices.** The shipped `pricing` values were checked on 2026-11-13 against Google's Gemini pricing page (paid Standard tier). Prices change: re-check the page and your invoices, and add an entry for any model you use. `gemini-3.5-flash` (laravel/ai's default Gemini model) wasn't listed on that page, so it is priced like the most expensive Flash model; prefer a listed model such as `gemini-3.5-flash-lite`. Keys may be `model` or `provider/model`.
 
 **Rules:**
 

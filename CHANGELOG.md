@@ -2,7 +2,9 @@
 
 All notable changes to `apistolic/stolic-ai-captioning-plugin` are documented here. The package follows semantic versioning.
 
-## 0.2.0 (unreleased)
+## 0.2.0 (2026-11-13)
+
+- Gemini prices in `pricing` checked against Google's pricing page (2026-11-13); README section on getting and restricting a Gemini API key.
 
 ### Spend budget with automatic pause
 
