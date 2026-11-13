@@ -13,6 +13,7 @@ use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Table;
 use Livewire\Component;
 use Spatie\MediaLibrary\MediaCollections\Models\Media;
+use Stolic\AiCaptioning\Filament\Actions\BrandImageAction;
 use Stolic\AiCaptioning\Filament\Actions\DescribeNowAction;
 use Stolic\AiCaptioning\Filament\Actions\UseAiSuggestionAction;
 use Stolic\AiCaptioning\Filament\Actions\UseAiSuggestionBulkAction;
@@ -39,6 +40,9 @@ final class MediaTable extends Component implements HasActions, HasSchemas, HasT
                 UseAiSuggestionAction::forField('caption'),
                 UseAiSuggestionAction::forField('alt'),
                 DescribeNowAction::make(),
+                BrandImageAction::make()
+                    ->logo(fn (Media $media): string => brandingLogoPngPath())
+                    ->targetCollection(fn (Media $media): string => 'branded'),
             ])
             ->toolbarActions([
                 UseAiSuggestionBulkAction::forField('caption'),

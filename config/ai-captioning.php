@@ -215,6 +215,48 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Branding (logo overlay)
+    |--------------------------------------------------------------------------
+    |
+    | Not AI: puts a logo (white by default) on a shaded badge or gradient in a
+    | corner of a copy of an image (Stolic\AiCaptioning\Branding). Needs the
+    | PHP imagick extension. Sizes are fractions of the image width.
+    |
+    | 'source_conversion': the conversion to brand when generated (null: the
+    | original). 'disk': where branded copies go (null: the collection's disk).
+    | 'font_path': a TTF/OTF file for text labels. 'copy_properties': extra
+    | custom property keys copied to the branded copy (caption / alt values,
+    | origins, suggestions and AI metadata are always copied).
+    | 'describe_branded_copies': whether branded copies added to a target
+    | collection are described again (false: they keep the copied text).
+    |
+    */
+
+    'branding' => [
+        'source_conversion' => null,
+        'disk' => null,
+        'font_path' => env('AI_CAPTIONING_BRAND_FONT'),
+        'copy_properties' => [],
+        'describe_branded_copies' => false,
+        'defaults' => [
+            'position' => 'bottom-right',   // top-left, top-right, bottom-left, bottom-right
+            'logo_width' => 0.16,           // max logo width
+            'logo_max_height' => 0.08,      // max logo height (fraction of the image width)
+            'padding' => 0.0195,
+            'margin' => 0.0234,
+            'shade' => 'badge',             // badge, gradient, none
+            'shade_color' => '#000000',
+            'shade_opacity' => 0.55,
+            'corner_radius' => 0.0117,
+            'force_white' => true,
+            'label_size' => 0.033,
+            'format' => null,               // null: keep the source format
+            'quality' => 90,
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Custom property keys
     |--------------------------------------------------------------------------
     |

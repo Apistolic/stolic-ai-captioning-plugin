@@ -48,6 +48,14 @@ final readonly class Target
         return null;
     }
 
+    /**
+     * A branded copy (BrandMedia) is not described again unless ai-captioning.branding.describe_branded_copies is on.
+     */
+    public static function isUndescribedBrandedCopy(Media $media): bool
+    {
+        return $media->hasCustomProperty('branded_from') && ! config('ai-captioning.branding.describe_branded_copies', false);
+    }
+
     public function matches(Media $media): bool
     {
         return $this->matchesModelType((string) $media->model_type)

@@ -19,7 +19,7 @@ final readonly class QueueDescriptionAfterConversion
     {
         $target = Target::for($event->media);
 
-        if ($target === null || $target->conversion === null || $target->conversion !== $event->conversion->getName()) {
+        if ($target === null || Target::isUndescribedBrandedCopy($event->media) || $target->conversion === null || $target->conversion !== $event->conversion->getName()) {
             return;
         }
 

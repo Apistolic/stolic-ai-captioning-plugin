@@ -1,20 +1,21 @@
 # Stolic AI captioning
 
-AI image descriptions (captions, alt text, and any other structured facts) for [Spatie Media Library](https://spatie.be/docs/laravel-medialibrary) media, using [`laravel/ai`](https://github.com/laravel/ai), with optional Filament 5 columns and actions.
+AI image descriptions (captions, alt text, and any other structured facts) for [Spatie Media Library](https://spatie.be/docs/laravel-medialibrary) media, using [`laravel/ai`](https://github.com/laravel/ai), with a spend budget that pauses itself, a logo branding overlay, and optional Filament 5 columns, actions and widgets.
 
 When an image is added to a configured collection, a vision model suggests a caption and alt text. They fill empty values. **A value a person wrote is never overwritten without a person confirming it.**
 
-> **Private package.** Used by the Stolic apps (THI, stolic-homes). It is not published on Packagist; install it from the private GitHub repository.
+> Built for and used by the Stolic apps (THI and stolic-homes). It is not on Packagist yet: install it from GitHub through a Composer `vcs` repository (no authentication needed).
 
 ## Requirements
 
 - PHP 8.4+, Laravel 12 or 13
 - `laravel/ai` ^0.8, `spatie/laravel-medialibrary` ^11
 - Optional: `filament/filament` ^5 for the classes in `Stolic\AiCaptioning\Filament`
+- Optional: the PHP `imagick` extension (and `dom`) for branding (`Stolic\AiCaptioning\Branding`); SVG logos need an ImageMagick build with an SVG delegate (librsvg)
 
 ## Install
 
-Add the private repository and require the package (Composer needs GitHub access to the repo, e.g. through an SSH key or `composer config --global github-oauth.github.com <token>`):
+Add the GitHub repository and require the package:
 
 ```json
 "repositories": [
@@ -33,7 +34,7 @@ php artisan migrate   # the spend ledger and pause state (the package loads its 
 
 To keep the migration in the app instead: `php artisan vendor:publish --tag=ai-captioning-migrations` (it skips tables that already exist, so the auto-loaded copy and the published one do not clash; set `database.run_migrations` to false to stop auto-loading).
 
-Until a version is tagged, require `dev-main`.
+Until 0.2.0 is tagged, require `dev-main` (or `^0.1` without the budget and branding).
 
 Set the key of the provider you use in `config/ai.php` (e.g. `GEMINI_API_KEY`).
 
@@ -144,7 +145,7 @@ php artisan ai-captioning:budget --pause --reason="Reviewing captions"
 php artisan ai-captioning:budget --resume
 ```
 
-**Email is the host's job.** The package dispatches `BudgetWarning` (`spendUsd`, `limitUsd`, `period`, `periodKey`, `warnAt`) and `BudgetExceeded` (`spendUsd`, `limitUsd`, `period`, `periodKey`) and never sends mail itself. A ready mail notification, `Notifications\AiCaptioningBudgetNotification`, can be routed by the host (see the THI example below), or write your own mailable.
+**Email is the host's job.** The package dispatches `BudgetWarning` (`spendUsd`, `limitUsd`, `period`, `periodKey`, `warnAt`) and `BudgetExceeded` (`spendUsd`, `limitUsd`, `period`, `periodKey`) and never sends mail itself. A ready mail notification, `Notifications\AiCaptioningBudgetNotification`, can be routed by the host (see the host example below), or write your own mailable.
 
 Other code that calls the `ImageDescriber` directly (not through `AiCaptioning::describe()`) bypasses the budget; check `AiCaptioning::budget()->check()` before and call `AiCaptioning::budget()->recordCall($description->provider, $description->model, $description->usage)` after.
 
@@ -160,7 +161,9 @@ All writes go through `Stolic\AiCaptioning\Actions\ApplyDescription`:
 
 Helpers: `value()`, `suggestion()`, `origin()`, `hasHumanValue()`, `suggestionDiffers()`.
 
-## Wiring a host app (THI example)
+## Wiring a host app (example: a school directory)
+
+The examples below are modeled on how THI uses the package; the class and setting names are illustrative.
 
 ```php
 // config/ai-captioning.php
@@ -211,7 +214,7 @@ use Stolic\AiCaptioning\Events\{BudgetExceeded, BudgetWarning};
 use Stolic\AiCaptioning\Notifications\AiCaptioningBudgetNotification;
 
 Event::listen([BudgetWarning::class, BudgetExceeded::class], function (BudgetWarning|BudgetExceeded $event): void {
-    Notification::route('mail', app(ReportSettings::class)->recipients) // THI's report recipients
+    Notification::route('mail', app(ReportSettings::class)->recipients) // e.g. the app's report recipients
         ->notify(AiCaptioningBudgetNotification::fromEvent($event));
 });
 ```
@@ -289,10 +292,9 @@ AiCaptionSpendSection::make(),
 $panel->widgets([AiCaptionSpendWidget::class]);
 ```
 
-## stolic-homes notes
+## Example: a custom profile (room classification)
 
-- Requires `laravel/ai` ^0.8; stolic-homes is on 0.4.5 and must be upgraded first (agent attributes and `LocalImage` usage carry over).
-- `ClassifyRoom` becomes a profile:
+An app that classified rooms with its own agent (as stolic-homes did) can use a profile instead; this needs `laravel/ai` ^0.8:
 
 ```php
 'room' => [
@@ -307,7 +309,62 @@ $panel->widgets([AiCaptionSpendWidget::class]);
 ],
 ```
 
-- Read the room with `$description->get('room')` from `app(ImageDescriber::class)->describe($path, $mime, [], 'room')` in `DetectRoomFromImage`, or from the `ai_room` custom property after a queued run.
+Read the room with `$description->get('room')` from `app(ImageDescriber::class)->describe($path, $mime, [], 'room')`, or from the `ai_room` custom property after a queued run.
+
+## Branding (logo overlay)
+
+Not AI, but it lives here for now under its own namespace (`Stolic\AiCaptioning\Branding`) and config section (`branding`); it could become its own package later.
+
+It puts a logo (made white by default, keeping its transparency) and an optional white text label on a shaded backdrop in a corner of a **copy** of an image: a deterministic ImageMagick recipe ported from stolic-homes, with every size a fraction of the image width (tuned on 1024 px wide images), so it looks the same at any resolution. It uses the PHP `imagick` extension only (no ImageMagick CLI). The source file is never modified.
+
+```php
+use Stolic\AiCaptioning\Branding\{BrandingOptions, BrandingPosition, ShadeStyle};
+use Stolic\AiCaptioning\Branding\Contracts\ImageBrander;
+
+app(ImageBrander::class)->brand('/tmp/photo.jpg', '/tmp/logo.svg', '/tmp/photo-branded.jpg', new BrandingOptions(
+    position: BrandingPosition::BottomRight,   // TopLeft, TopRight, BottomLeft, BottomRight
+    shade: ShadeStyle::Badge,                  // Badge (rounded box), Gradient (edge fade), None
+    label: 'ABC School', fontPath: '/path/to/Inter-SemiBold.ttf',
+));
+```
+
+`BrandingOptions` (readonly; `BrandingOptions::fromConfig([...overrides])` starts from `branding.defaults`):
+
+| Option | Default | Meaning |
+|---|---|---|
+| `position` | bottom-right | Corner |
+| `logoWidth`, `logoMaxHeight` | 0.16, 0.08 | Logo box, as fractions of the image width |
+| `padding`, `margin`, `cornerRadius` | 0.0195, 0.0234, 0.0117 | Badge padding (vertical is 70%), distance from the edges, corner radius |
+| `shade`, `shadeColor`, `shadeOpacity` | badge, #000000, 0.55 | Backdrop style, color and opacity |
+| `forceWhite` | true | Recolor every non-transparent logo pixel white, keeping its alpha (a logo needs a transparent background) |
+| `label`, `fontPath`, `labelSize` | none, `branding.font_path`, 0.033 | Optional white text next to the logo; it shrinks so the badge stays under 45% of the image width |
+| `format`, `quality` | output extension, 90 | Output format (jpg, png, webp, avif) and quality |
+
+Logos can be SVG (rendered at a high density and scaled down, so edges stay sharp) or PNG/JPEG/GIF/WebP. **Untrusted input is expected** (e.g. logos harvested from websites): SVGs pass through `Stolic\AiCaptioning\Support\SvgSanitizer` and are rendered only from the cleaned string, and other files must start with the bytes of a known raster format, so ImageMagick never picks a coder from file contents. See [SECURITY.md](SECURITY.md). Host apps can use `SvgSanitizer::sanitize($svg)` for their own SVG handling.
+
+### Media Library
+
+```php
+use Stolic\AiCaptioning\Branding\BrandMedia;
+
+$branded = app(BrandMedia::class)->handle($media, $school->getFirstMedia('school_logo'), 'branded_gallery', BrandingOptions::fromConfig());
+```
+
+`handle(Media $media, string|Media $logo, string $targetCollection, ?BrandingOptions $options = null): Media` brands the media's `branding.source_conversion` (when generated) or original, adds the result as a new media item on the same model in the target collection, and copies the caption / alt values, origins, suggestions, AI metadata and `branding.copy_properties`. The copy gets `branded_from` (source media id) and `branding` (the options). Files on remote disks (S3, R2) are downloaded to temporary files. `existingCopy($media, $collection)` finds an earlier copy. Branded copies are not described again by the AI (`branding.describe_branded_copies`). `Jobs\BrandMediaJob` runs it on the queue.
+
+### Filament
+
+```php
+use Stolic\AiCaptioning\Filament\Actions\BrandImageAction;
+
+BrandImageAction::make()
+    ->logo(fn (Media $media): ?Media => $media->model->getFirstMedia('school_logo')) // a Media item or a local path
+    ->targetCollection('branded_gallery')                                           // or fn (Media $media): string
+    ->brandingOptions(['shade' => 'gradient'])                                      // optional
+    ->queued();                                                                     // optional: run as a job
+```
+
+It asks for confirmation, notifies "Branded copy added" (or the error), and shows only for images. `->logoOptions(fn (Media $media): array => [$path => 'Label', ...])` lets the person pick a logo in the modal instead. A queued run with a path logo needs that path on the worker; pass a Media logo for remote disks.
 
 ## Testing
 

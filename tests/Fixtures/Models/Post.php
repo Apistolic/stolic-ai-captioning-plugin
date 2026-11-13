@@ -21,6 +21,7 @@ final class Post extends Model implements HasMedia
         $this->addMediaCollection('gallery');
         $this->addMediaCollection('featured')->singleFile();
         $this->addMediaCollection('documents');
+        $this->addMediaCollection('branded');
     }
 
     public function registerMediaConversions(?Media $media = null): void

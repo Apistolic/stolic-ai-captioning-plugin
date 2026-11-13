@@ -1,6 +1,6 @@
 {
     "name": "apistolic/stolic-ai-captioning-plugin",
-    "description": "AI image descriptions (captions, alt text, custom profiles) for Spatie Media Library media, with a Filament plugin. Private package.",
+    "description": "AI image descriptions (captions, alt text, custom profiles) for Spatie Media Library media, with a spend budget, a logo branding overlay and a Filament plugin.",
     "type": "library",
     "license": "MIT",
     "keywords": [
@@ -9,7 +9,9 @@
         "medialibrary",
         "alt-text",
         "captions",
-        "filament"
+        "filament",
+        "branding",
+        "watermark"
     ],
     "authors": [
         {
@@ -33,7 +35,9 @@
         "pestphp/pest-plugin-livewire": "^4.0"
     },
     "suggest": {
-        "filament/filament": "Required (^5.0) for the Filament plugin, columns and actions in Stolic\\AiCaptioning\\Filament."
+        "filament/filament": "Required (^5.0) for the Filament plugin, columns and actions in Stolic\\AiCaptioning\\Filament.",
+        "ext-imagick": "Required for branding images (Stolic\\AiCaptioning\\Branding); SVG logos also need an ImageMagick build with an SVG delegate.",
+        "ext-dom": "Required for SvgSanitizer (SVG logos in branding)."
     },
     "autoload": {
         "psr-4": {

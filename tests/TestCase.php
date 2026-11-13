@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Stolic\AiCaptioning\Tests;
 
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
 use Laravel\Ai\AiServiceProvider;
 use Orchestra\Testbench\TestCase as Orchestra;
@@ -17,6 +18,8 @@ abstract class TestCase extends Orchestra
     protected function setUp(): void
     {
         parent::setUp();
+
+        Http::preventStrayRequests();
 
         Schema::create('posts', function (Blueprint $table): void {
             $table->id();

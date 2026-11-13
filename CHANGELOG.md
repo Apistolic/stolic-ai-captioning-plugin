@@ -16,6 +16,18 @@ All notable changes to `apistolic/stolic-ai-captioning-plugin` are documented he
 - Optional `Notifications\AiCaptioningBudgetNotification` (mail) for hosts to route; no mail is sent by the package.
 - Filament: `AiCaptionSpendWidget`, `AiCaptionSpendSection`, `AiCaptionSpendEntry`, `AiCaptioningStateEntry`, `PauseAiCaptioningAction`, `ResumeAiCaptioningAction`.
 
+### Branding (logo overlay)
+
+- `Branding\Contracts\ImageBrander` with the default `ImagickImageBrander` (PHP imagick only), ported from stolic-homes' logo badge: SVG or raster logo, optionally forced white, optional text label, `badge` or `gradient` shade (or none), four corners, sizes proportional to the image width; always writes a new file.
+- `BrandingOptions` (readonly, `fromConfig()` / `fromArray()` / `with()` / `toArray()`), `BrandingPosition`, `ShadeStyle`, `BrandingFailed`; `branding.*` config.
+- `Branding\BrandMedia` (and `Jobs\BrandMediaJob`): a branded copy as a new media item with `branded_from`, `branding` and the copied caption / alt / origin properties; branded copies are not described again by default.
+- Filament `BrandImageAction` row action.
+- `Support\SvgSanitizer`: untrusted SVGs are cleaned before rendering (no DOCTYPE/entities, no scripts, event handlers, foreignObject, XInclude, external href/src or url()); rendering only from the cleaned string. Raster inputs are checked by their leading bytes.
+
+### Other
+
+- README: public install instructions; `SECURITY.md`.
+
 ## 0.1.0 (2026-11-13)
 
 First version.

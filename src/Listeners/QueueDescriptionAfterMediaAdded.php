@@ -19,7 +19,7 @@ final readonly class QueueDescriptionAfterMediaAdded
     {
         $target = Target::for($event->media);
 
-        if ($target === null || $target->conversion !== null) {
+        if ($target === null || Target::isUndescribedBrandedCopy($event->media) || $target->conversion !== null) {
             return;
         }
 
