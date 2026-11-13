@@ -8,10 +8,13 @@ use Closure;
 use Illuminate\Contracts\Cache\Repository as CacheRepository;
 use Illuminate\Contracts\Container\Container;
 use Illuminate\Support\Facades\Cache;
+use Laravel\Ai\Enums\Lab;
 use Spatie\MediaLibrary\MediaCollections\Models\Media;
 use Stolic\AiCaptioning\Actions\ApplyDescription;
+use Stolic\AiCaptioning\Budget\BudgetManager;
 use Stolic\AiCaptioning\Contracts\ContextResolver;
 use Stolic\AiCaptioning\Contracts\ImageDescriber;
+use Stolic\AiCaptioning\Data\BudgetStatus;
 use Stolic\AiCaptioning\Data\ImageDescription;
 use Stolic\AiCaptioning\Enums\SkipReason;
 use Stolic\AiCaptioning\Events\ImageDescribed;
@@ -19,15 +22,17 @@ use Stolic\AiCaptioning\Events\ImageDescriptionFailed;
 use Stolic\AiCaptioning\Events\ImageDescriptionSkipped;
 use Stolic\AiCaptioning\Jobs\DescribeMediaJob;
 use Stolic\AiCaptioning\Support\LocalImageFile;
+use Stolic\AiCaptioning\Support\Profile;
 use Stolic\AiCaptioning\Support\Target;
 use Throwable;
 
 /**
- * Entry point: guards (enabled, daily cap), context, describing and applying a media item.
+ * Entry point: guards (enabled, spend budget, daily cap), context, describing and applying a media item.
  *
  * Host apps register their hooks in a service provider's boot():
  *   AiCaptioning::enabledUsing(fn (): bool => app(ImageCaptionSettings::class)->ai_captions_enabled);
  *   AiCaptioning::dailyCapUsing(fn (): ?int => app(ImageCaptionSettings::class)->daily_limit);
+ *   AiCaptioning::budgetUsing(fn (): ?float => app(ImageCaptionSettings::class)->monthly_budget_usd);
  *   AiCaptioning::resolveContextUsing(fn (Media $media): array => [...]);
  */
 final class AiCaptioning
@@ -62,6 +67,62 @@ final class AiCaptioning
         $this->dailyCapResolver = $resolver;
 
         return $this;
+    }
+
+    /**
+     * Override the spend limit in USD for the budget period (null = no limit), e.g. from host settings.
+     *
+     * @param  Closure(): (float|int|string|null)  $resolver
+     */
+    public function budgetUsing(Closure $resolver): self
+    {
+        $this->budget()->limitUsing($resolver);
+
+        return $this;
+    }
+
+    /**
+     * Pause AI captioning until resume() (describe calls are skipped with SkipReason::Paused).
+     */
+    public function pause(string $reason = ''): void
+    {
+        $this->budget()->pause($reason);
+    }
+
+    /**
+     * Lift a manual or budget pause.
+     */
+    public function resume(): void
+    {
+        $this->budget()->resume();
+    }
+
+    public function isPaused(): bool
+    {
+        return $this->budget()->isPaused();
+    }
+
+    /**
+     * Estimated USD spend for null (the configured budget period), 'month', 'total', 'today' or 'YYYY-MM'.
+     */
+    public function spend(?string $period = null): float
+    {
+        return $this->budget()->spend($period);
+    }
+
+    public function budgetLimit(): ?float
+    {
+        return $this->budget()->limit();
+    }
+
+    public function budgetStatus(): BudgetStatus
+    {
+        return $this->budget()->status();
+    }
+
+    public function budget(): BudgetManager
+    {
+        return $this->container->make(BudgetManager::class);
     }
 
     /**
@@ -151,6 +212,10 @@ final class AiCaptioning
             return $this->skip($media, SkipReason::NotAnImage, $profile);
         }
 
+        if (($budgetReason = $this->budget()->check()) !== null) {
+            return $this->skip($media, $budgetReason, $profile);
+        }
+
         if (! $this->reserveCall()) {
             return $this->skip($media, SkipReason::DailyCapReached, $profile);
         }
@@ -160,12 +225,20 @@ final class AiCaptioning
         try {
             $file = LocalImageFile::for($media, $target?->conversion);
 
-            $description = $this->container->make(ImageDescriber::class)->describe(
-                $file->path,
-                $file->mimeType,
-                $this->contextFor($media),
-                $profile,
-            );
+            try {
+                $description = $this->container->make(ImageDescriber::class)->describe(
+                    $file->path,
+                    $file->mimeType,
+                    $this->contextFor($media),
+                    $profile,
+                );
+            } catch (Throwable $exception) {
+                $this->budget()->recordFailedCall(...$this->providerAndModelOf($profile));
+
+                throw $exception;
+            }
+
+            $cost = $this->budget()->recordCall($description->provider, $description->model, $description->usage);
 
             $outcomes = $this->container->make(ApplyDescription::class)->apply($media, $description);
         } catch (Throwable $exception) {
@@ -176,7 +249,7 @@ final class AiCaptioning
             $file?->cleanup();
         }
 
-        ImageDescribed::dispatch($media, $description, $outcomes);
+        ImageDescribed::dispatch($media, $description, $outcomes, $cost);
 
         return $description;
     }
@@ -209,6 +282,35 @@ final class AiCaptioning
         }
 
         return true;
+    }
+
+    /**
+     * The provider and model a profile would use, for ledger rows of failed calls.
+     *
+     * @return array{0: string, 1: string}
+     */
+    private function providerAndModelOf(string $profile): array
+    {
+        try {
+            $resolved = Profile::named($profile);
+        } catch (Throwable) {
+            return ['unknown', 'unknown'];
+        }
+
+        $provider = $resolved->provider;
+
+        if (is_array($provider)) {
+            $first = array_key_first($provider);
+            $provider = is_string($first) ? $first : ($provider[$first] ?? null);
+        }
+
+        $provider = match (true) {
+            $provider instanceof Lab => (string) $provider->value,
+            is_string($provider) && $provider !== '' => $provider,
+            default => (string) config('ai.default', 'unknown'),
+        };
+
+        return [$provider, $resolved->model ?? 'default'];
     }
 
     private function skip(Media $media, SkipReason $reason, string $profile): null

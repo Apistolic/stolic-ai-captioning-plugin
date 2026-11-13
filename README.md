@@ -26,9 +26,12 @@ Add the private repository and require the package (Composer needs GitHub access
 ```
 
 ```bash
-composer require apistolic/stolic-ai-captioning-plugin:^0.1
+composer require apistolic/stolic-ai-captioning-plugin:^0.2
 php artisan vendor:publish --tag=ai-captioning-config
+php artisan migrate   # the spend ledger and pause state (the package loads its migration itself)
 ```
+
+To keep the migration in the app instead: `php artisan vendor:publish --tag=ai-captioning-migrations` (it skips tables that already exist, so the auto-loaded copy and the published one do not clash; set `database.run_migrations` to false to stop auto-loading).
 
 Until a version is tagged, require `dev-main`.
 
@@ -38,8 +41,9 @@ Set the key of the provider you use in `config/ai.php` (e.g. `GEMINI_API_KEY`).
 
 1. A media item is added to a configured model and collection.
 2. When the configured conversion (e.g. `web`) has been generated (or straight away when no conversion is configured), a unique queued `DescribeMediaJob` is dispatched for it.
-3. The job checks the guards (enabled, daily cap), copies the image locally if it lives on a remote disk (S3 / R2), asks the model with the profile's instructions plus host context, and applies the answer with the overwrite rule.
-4. `ImageDescribed`, `ImageDescriptionSkipped` or `ImageDescriptionFailed` is dispatched for the host app to log.
+3. The job checks the guards (enabled, pause and spend budget, daily cap), copies the image locally if it lives on a remote disk (S3 / R2), asks the model with the profile's instructions plus host context, and applies the answer with the overwrite rule.
+4. The call's estimated cost is added to the spend ledger; at the warning level `BudgetWarning` is dispatched, at the limit captioning pauses and `BudgetExceeded` is dispatched.
+5. `ImageDescribed` (with token usage and cost), `ImageDescriptionSkipped` or `ImageDescriptionFailed` is dispatched for the host app to log.
 
 ## Configuration
 
@@ -50,6 +54,9 @@ Set the key of the provider you use in `config/ai.php` (e.g. `GEMINI_API_KEY`).
 | `enabled` | Master switch (`AI_CAPTIONING_ENABLED`) |
 | `daily_cap` | Max describe calls per day, `null` for none (`AI_CAPTIONING_DAILY_CAP`, default 200) |
 | `cache_store` | Cache store for the daily counter (default store when null) |
+| `budget.enabled`, `budget.limit_usd`, `budget.period`, `budget.warn_at`, `budget.fallback_cost_usd` | Spend budget (below); default $10.00 per calendar month, warn at 80%, $0.002 per call when the cost cannot be computed |
+| `pricing` | Model => `input_per_million`, `output_per_million`, `per_image` in USD. **Placeholder values: verify them** |
+| `database.connection`, `database.run_migrations`, `database.spend_table`, `database.state_table` | Where the ledger and pause state live |
 | `queue.connection`, `queue.name` | Where `DescribeMediaJob` runs |
 | `auto_describe` | Register the Media Library listeners (default true) |
 | `targets` | List of `['model' => ..., 'collections' => [...], 'conversion' => 'web', 'profile' => 'default']` |
@@ -94,6 +101,52 @@ A profile is one way of describing an image:
 | `ai_caption`, `ai_alt` | The latest suggestions, kept even when not applied |
 | `ai_kind`, `ai_people_visible`, `ai_concerns` | The rest of the answer |
 | `ai_described_at`, `ai_model`, `ai_profile` | When and what produced it |
+
+## Spend budget
+
+Every describe call is estimated in USD and stored in a durable ledger (`ai_captioning_spend`: one row per day, provider and model with calls, input/output tokens and `estimated_usd`). The pause state is one row in `ai_captioning_state`.
+
+**Cost of one call** (`Budget\CostEstimator`), from the token usage laravel/ai reports on the response (`$response->usage`, passed on as `ImageDescription::$usage`):
+
+```
+input  = prompt tokens + cached input tokens (counted at the full input price)
+output = completion tokens + reasoning ("thinking") tokens
+usd    = input / 1M x input_per_million + output / 1M x output_per_million + per_image
+```
+
+When the model has no `pricing` entry, or the provider reported no usage (zero tokens, as fakes do), the flat `budget.fallback_cost_usd` is counted instead. A call that throws is counted at the fallback too, since the provider may have charged for it. The estimate never counts a call as free.
+
+> **Set the prices.** The shipped `pricing` values are placeholders. Check Google's Gemini pricing page and your invoices, then set the entries for the models you use (`gemini-3.5-flash` is laravel/ai's default Gemini model). Keys may be `model` or `provider/model`.
+
+**Rules:**
+
+- Before a call: when paused, or the period's spend is at or above the limit, the call is skipped (`SkipReason::BudgetExceeded`, or `SkipReason::Paused` for a manual pause) and the model is not asked. Reaching the limit pauses.
+- After a call: the estimate is added to the ledger. When the period's spend crosses `warn_at` x limit, `BudgetWarning` is dispatched once per period. When it reaches the limit, captioning is paused (persisted) and `BudgetExceeded` is dispatched once per period.
+- A **budget pause** holds only while the spend is at or above the limit: with `period = month` it lifts by itself in the next month; it also lifts when the limit is raised. A **manual pause** stays until it is resumed. Resuming while still over the limit pauses again on the next call (without a second email).
+- `budget.limit_usd = null` means no limit (spend is still recorded); `budget.enabled = false` turns off the ledger and the limit (a manual pause still applies).
+
+**Controls:**
+
+```php
+use Stolic\AiCaptioning\Facades\AiCaptioning;
+
+AiCaptioning::budgetUsing(fn (): ?float => app(ImageCaptionSettings::class)->ai_budget_usd); // host override of the limit
+AiCaptioning::pause('Checking captions by hand');
+AiCaptioning::resume();
+AiCaptioning::isPaused();
+AiCaptioning::spend();          // the configured period; also 'month', 'total', 'today', '2026-11'
+AiCaptioning::budgetStatus();   // BudgetStatus: spend, limit, period, paused, reason, ...
+```
+
+```bash
+php artisan ai-captioning:budget                    # spend this period and in total, limit, warning level, state
+php artisan ai-captioning:budget --pause --reason="Reviewing captions"
+php artisan ai-captioning:budget --resume
+```
+
+**Email is the host's job.** The package dispatches `BudgetWarning` (`spendUsd`, `limitUsd`, `period`, `periodKey`, `warnAt`) and `BudgetExceeded` (`spendUsd`, `limitUsd`, `period`, `periodKey`) and never sends mail itself. A ready mail notification, `Notifications\AiCaptioningBudgetNotification`, can be routed by the host (see the THI example below), or write your own mailable.
+
+Other code that calls the `ImageDescriber` directly (not through `AiCaptioning::describe()`) bypasses the budget; check `AiCaptioning::budget()->check()` before and call `AiCaptioning::budget()->recordCall($description->provider, $description->model, $description->usage)` after.
 
 ## The overwrite rule
 
@@ -144,10 +197,26 @@ use Stolic\AiCaptioning\Facades\AiCaptioning;
 
 AiCaptioning::enabledUsing(fn (): bool => app(ImageCaptionSettings::class)->ai_captions_enabled);
 AiCaptioning::dailyCapUsing(fn (): ?int => app(ImageCaptionSettings::class)->daily_describe_limit);
+AiCaptioning::budgetUsing(fn (): ?float => app(ImageCaptionSettings::class)->ai_budget_usd);
 
-Event::listen(ImageDescribed::class, LogImageDescriptionApiCall::class);        // write to api_calls
+Event::listen(ImageDescribed::class, LogImageDescriptionApiCall::class);        // write to api_calls ($event->cost->usd, $event->description->usage)
 Event::listen(ImageDescriptionFailed::class, LogImageDescriptionApiCall::class);
 ```
+
+Email the report recipients when the budget runs low or captioning pauses, through the app's mailer:
+
+```php
+use Illuminate\Support\Facades\Notification;
+use Stolic\AiCaptioning\Events\{BudgetExceeded, BudgetWarning};
+use Stolic\AiCaptioning\Notifications\AiCaptioningBudgetNotification;
+
+Event::listen([BudgetWarning::class, BudgetExceeded::class], function (BudgetWarning|BudgetExceeded $event): void {
+    Notification::route('mail', app(ReportSettings::class)->recipients) // THI's report recipients
+        ->notify(AiCaptioningBudgetNotification::fromEvent($event));
+});
+```
+
+(Or `Mail::to($recipients)->send(new AiBudgetExceededMail($event->spendUsd, $event->limitUsd, $event->periodKey))` with your own mailable. Queue the listener if mail is slow; the events are dispatched inside the describe job.)
 
 A closure works instead of a resolver class: `AiCaptioning::resolveContextUsing(fn (Media $media): array => [...])`.
 
@@ -201,7 +270,24 @@ $table
 
 The row action shows only when a suggestion exists and differs from the current value. The bulk action applies to the selected rows only.
 
-There is no settings page: the host app owns its settings and wires them through `enabledUsing()` / `dailyCapUsing()`.
+There is no settings page: the host app owns its settings and wires them through `enabledUsing()` / `dailyCapUsing()` / `budgetUsing()`.
+
+### Spend and pause
+
+```php
+use Stolic\AiCaptioning\Filament\Schemas\AiCaptionSpendSection;
+use Stolic\AiCaptioning\Filament\Widgets\AiCaptionSpendWidget;
+
+// In a settings page's form schema: "AI caption spend: $3.21 of $10.00 (2026-11)", a Running / Paused badge,
+// and Pause / Resume buttons in the section header.
+AiCaptionSpendSection::make(),
+
+// Or the parts: AiCaptionSpendEntry::make(), AiCaptioningStateEntry::make() (Filament\Infolists),
+// PauseAiCaptioningAction::make(), ResumeAiCaptioningAction::make() (Filament\Actions).
+
+// A dashboard widget (spend / limit, state):
+$panel->widgets([AiCaptionSpendWidget::class]);
+```
 
 ## stolic-homes notes
 

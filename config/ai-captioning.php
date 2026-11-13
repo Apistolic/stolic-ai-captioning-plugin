@@ -34,6 +34,84 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Spend budget
+    |--------------------------------------------------------------------------
+    |
+    | Every describe call is estimated in USD (see 'pricing') and added to a
+    | ledger table (ai_captioning_spend). Before a call, AI captioning is
+    | skipped when it is paused or the period's spend has reached the limit.
+    | After a call, BudgetWarning is dispatched once per period when the
+    | spend crosses warn_at x limit, and when it reaches the limit captioning
+    | is paused (persisted in ai_captioning_state) and BudgetExceeded is
+    | dispatched once. The host app sends email on those events.
+    |
+    | 'period': 'month' (calendar month, application timezone; a budget pause
+    | lifts by itself in the next month) or 'total' (all time).
+    | 'limit_usd': null for no limit (spend is still recorded). A host app can
+    | override it with AiCaptioning::budgetUsing(fn (): ?float => ...).
+    | A budget pause also lifts when the limit is raised above the spend.
+    | A manual pause (AiCaptioning::pause(), ai-captioning:budget --pause)
+    | stays until it is resumed.
+    |
+    */
+
+    'budget' => [
+        'enabled' => (bool) env('AI_CAPTIONING_BUDGET_ENABLED', true),
+        'limit_usd' => env('AI_CAPTIONING_BUDGET_USD', 10.00),
+        'period' => env('AI_CAPTIONING_BUDGET_PERIOD', 'month'),
+        'warn_at' => 0.8,
+
+        /*
+         * The flat estimate for one call, used when the model has no price
+         * below or the provider reported no token usage, and for calls that
+         * failed (the provider may still have charged for them).
+         */
+        'fallback_cost_usd' => 0.002,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Prices per model (USD)
+    |--------------------------------------------------------------------------
+    |
+    | Model name => price per 1M input tokens, per 1M output tokens (thinking
+    | tokens are billed as output) and an optional flat price per image.
+    | Keys may also be 'provider/model'. Cached input tokens are counted at
+    | the full input price, so the estimate does not come out too low.
+    |
+    | PLACEHOLDER VALUES: verify against Google's Gemini pricing
+    | (https://ai.google.dev/gemini-api/docs/pricing) and your invoices
+    | before relying on them. A model missing here uses the fallback above.
+    |
+    */
+
+    'pricing' => [
+        'gemini-3.5-flash' => ['input_per_million' => 0.50, 'output_per_million' => 3.00, 'per_image' => null], // PLACEHOLDER: verify against Google's Gemini pricing
+        'gemini-2.5-flash' => ['input_per_million' => 0.30, 'output_per_million' => 2.50, 'per_image' => null], // PLACEHOLDER: verify against Google's Gemini pricing
+        'gemini-2.5-flash-lite' => ['input_per_million' => 0.10, 'output_per_million' => 0.40, 'per_image' => null], // PLACEHOLDER: verify against Google's Gemini pricing
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Database
+    |--------------------------------------------------------------------------
+    |
+    | The spend ledger and the pause state. The package loads its migration
+    | itself; to publish it instead, run
+    | php artisan vendor:publish --tag=ai-captioning-migrations
+    | (the migration skips tables that already exist, so both are safe).
+    |
+    */
+
+    'database' => [
+        'connection' => env('AI_CAPTIONING_DB_CONNECTION'),
+        'run_migrations' => true,
+        'spend_table' => 'ai_captioning_spend',
+        'state_table' => 'ai_captioning_state',
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Queue
     |--------------------------------------------------------------------------
     */

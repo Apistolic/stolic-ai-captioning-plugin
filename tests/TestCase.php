@@ -26,6 +26,8 @@ abstract class TestCase extends Orchestra
 
         $migration = include __DIR__.'/../vendor/spatie/laravel-medialibrary/database/migrations/create_media_table.php.stub';
         $migration->up();
+
+        (include __DIR__.'/../database/migrations/create_ai_captioning_budget_tables.php')->up();
     }
 
     protected function tearDown(): void

@@ -14,6 +14,7 @@ use Filament\Notifications\NotificationsServiceProvider;
 use Filament\Schemas\SchemasServiceProvider;
 use Filament\Support\SupportServiceProvider;
 use Filament\Tables\TablesServiceProvider;
+use Filament\Widgets\WidgetsServiceProvider;
 use Livewire\LivewireServiceProvider;
 use RyanChandler\BladeCaptureDirective\BladeCaptureDirectiveServiceProvider;
 use Stolic\AiCaptioning\Tests\TestCase;
@@ -35,6 +36,7 @@ abstract class FilamentTestCase extends TestCase
             NotificationsServiceProvider::class,
             SchemasServiceProvider::class,
             TablesServiceProvider::class,
+            WidgetsServiceProvider::class,
             FilamentServiceProvider::class,
         ];
     }

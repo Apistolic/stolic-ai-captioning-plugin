@@ -40,6 +40,7 @@ final class LaravelAiImageDescriber implements ImageDescriber
             fields: $this->normalise($structured, $resolvedProfile->schema),
             model: $response->meta->model,
             provider: $response->meta->provider,
+            usage: $response->usage,
         );
     }
 

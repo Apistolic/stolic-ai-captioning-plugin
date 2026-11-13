@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Stolic\AiCaptioning\Data;
 
 use Carbon\CarbonImmutable;
+use Laravel\Ai\Responses\Data\Usage;
 
 /**
  * The structured answer for one image.
@@ -14,6 +15,7 @@ final readonly class ImageDescription
     /**
      * @param  list<string>  $concerns
      * @param  array<string, mixed>  $fields  Every structured field returned by the profile (after normalisation).
+     * @param  Usage|null  $usage  The token usage the provider reported (null when the describer does not know it).
      */
     public function __construct(
         public string $profile,
@@ -26,6 +28,7 @@ final readonly class ImageDescription
         public ?string $model = null,
         public ?string $provider = null,
         public CarbonImmutable $describedAt = new CarbonImmutable,
+        public ?Usage $usage = null,
     ) {}
 
     /**
@@ -39,6 +42,7 @@ final readonly class ImageDescription
         ?string $model = null,
         ?string $provider = null,
         ?CarbonImmutable $describedAt = null,
+        ?Usage $usage = null,
     ): self {
         $concerns = $fields['concerns'] ?? [];
 
@@ -56,6 +60,7 @@ final readonly class ImageDescription
             model: $model,
             provider: $provider,
             describedAt: $describedAt ?? CarbonImmutable::now(),
+            usage: $usage,
         );
     }
 
@@ -78,6 +83,7 @@ final readonly class ImageDescription
             'model' => $this->model,
             'provider' => $this->provider,
             'described_at' => $this->describedAt->toIso8601String(),
+            'usage' => $this->usage?->toArray(),
         ];
     }
 
