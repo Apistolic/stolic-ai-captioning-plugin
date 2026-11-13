@@ -2,7 +2,7 @@
 
 All notable changes to `apistolic/stolic-ai-captioning-plugin` are documented here. The package follows semantic versioning.
 
-## 0.1.0 (unreleased)
+## 0.1.0 (2026-11-13)
 
 First version.
 
