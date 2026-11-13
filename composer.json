@@ -1,0 +1,70 @@
+{
+    "name": "apistolic/stolic-ai-captioning-plugin",
+    "description": "AI image descriptions (captions, alt text, custom profiles) for Spatie Media Library media, with a Filament plugin. Private package.",
+    "type": "library",
+    "license": "MIT",
+    "keywords": [
+        "laravel",
+        "ai",
+        "medialibrary",
+        "alt-text",
+        "captions",
+        "filament"
+    ],
+    "authors": [
+        {
+            "name": "Stolic"
+        }
+    ],
+    "require": {
+        "php": "^8.4",
+        "illuminate/support": "^12.0|^13.0",
+        "illuminate/contracts": "^12.0|^13.0",
+        "laravel/ai": "^0.8",
+        "spatie/laravel-medialibrary": "^11.0",
+        "spatie/laravel-package-tools": "^1.16"
+    },
+    "require-dev": {
+        "filament/filament": "^5.0",
+        "laravel/pint": "^1.24",
+        "orchestra/testbench": "^10.0|^11.0",
+        "pestphp/pest": "^4.0",
+        "pestphp/pest-plugin-laravel": "^4.0",
+        "pestphp/pest-plugin-livewire": "^4.0"
+    },
+    "suggest": {
+        "filament/filament": "Required (^5.0) for the Filament plugin, columns and actions in Stolic\\AiCaptioning\\Filament."
+    },
+    "autoload": {
+        "psr-4": {
+            "Stolic\\AiCaptioning\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Stolic\\AiCaptioning\\Tests\\": "tests/"
+        },
+        "files": [
+            "tests/Helpers.php"
+        ]
+    },
+    "scripts": {
+        "test": "vendor/bin/pest",
+        "format": "vendor/bin/pint"
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Stolic\\AiCaptioning\\AiCaptioningServiceProvider"
+            ]
+        }
+    },
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": {
+            "pestphp/pest-plugin": true
+        }
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true
+}
